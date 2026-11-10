@@ -5,3 +5,7 @@ pydantic>=2.10.0
 python-multipart>=0.0.12
 pillow>=11.0.0
 pytesseract>=0.3.13
+pyjwt>=2.9.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.2.0
+

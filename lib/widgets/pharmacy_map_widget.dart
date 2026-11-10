@@ -173,7 +173,7 @@ class _PharmacyMapWidgetState extends State<PharmacyMapWidget>
                             size: 14, color: C.lavender),
                         const SizedBox(width: 6),
                         Text(
-                          'DAWA Geographic Radar (Lahore Demo)',
+                          'Live Radar',
                           style: t(11.5,
                               w: FontWeight.w600, c: Colors.white70),
                         ),
@@ -214,16 +214,34 @@ class _PharmacyMapWidgetState extends State<PharmacyMapWidget>
 
   Widget _buildPharmacyPin(
       int index, Map<String, dynamic> p, double w, double h) {
-    // Relative coordinates offset from center based on index
-    // Angles distributed around the compass
-    final angles = [0.8, 2.3, 3.7, 5.1];
-    final radii = [70.0, 95.0, 85.0, 105.0];
-
-    final angle = angles[index % angles.length];
-    final radius = radii[index % radii.length];
-
     final cx = w / 2;
     final cy = h / 2 - 10;
+
+    double maxDist = 1.0;
+    for (final ph in widget.pharmacies) {
+      final d = (ph['distance_km'] as num?)?.toDouble() ?? 1.0;
+      if (d > maxDist) maxDist = d;
+    }
+
+    final pLat = (p['lat'] as num?)?.toDouble();
+    final pLng = (p['lng'] ?? p['lon'] as num?)?.toDouble();
+    final distVal = (p['distance_km'] as num?)?.toDouble() ?? 1.0;
+
+    double angle;
+    if (pLat != null && pLng != null && (pLat != widget.patientLat || pLng != widget.patientLon)) {
+      final dLon = (pLng - widget.patientLon) * math.pi / 180.0;
+      final y = math.sin(dLon) * math.cos(pLat * math.pi / 180.0);
+      final x = math.cos(widget.patientLat * math.pi / 180.0) * math.sin(pLat * math.pi / 180.0) -
+                math.sin(widget.patientLat * math.pi / 180.0) * math.cos(pLat * math.pi / 180.0) * math.cos(dLon);
+      final bearing = math.atan2(y, x);
+      angle = bearing - (math.pi / 2);
+    } else {
+      angle = (index * 2 * math.pi / math.max(1, widget.pharmacies.length));
+    }
+
+    final maxPixelRadius = (math.min(w, h) / 2 - 36).clamp(45.0, 130.0);
+    final normDist = (distVal / maxDist).clamp(0.25, 0.95);
+    final radius = normDist * maxPixelRadius;
 
     final px = cx + radius * math.cos(angle);
     final py = cy + radius * math.sin(angle);
@@ -232,68 +250,71 @@ class _PharmacyMapWidgetState extends State<PharmacyMapWidget>
     final dist = p['distance_km']?.toString() ?? '1.5';
 
     return Positioned(
-      left: px - 40,
+      left: px - 43,
       top: py - 20,
       child: SizedBox(
-        width: 80,
+        width: 86,
         child: GestureDetector(
           onTap: () {
             setState(() => _selectedPharmacyIndex = index);
             widget.onSelectPharmacy?.call(p);
           },
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white : const Color(0xFF312E81),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isSelected ? C.purple : C.lavender,
-                  width: isSelected ? 2 : 1,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                      color: Colors.black45,
-                      blurRadius: 6,
-                      offset: Offset(0, 3)),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.local_pharmacy_rounded,
-                    size: 13,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : const Color(0xFF312E81),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
                     color: isSelected ? C.purple : C.lavender,
+                    width: isSelected ? 2 : 1,
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$dist km',
-                    style: t(11,
-                        w: FontWeight.w700,
-                        c: isSelected ? C.text : Colors.white),
-                  ),
-                ],
+                  boxShadow: const [
+                    BoxShadow(
+                        color: Colors.black45,
+                        blurRadius: 6,
+                        offset: Offset(0, 3)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.local_pharmacy_rounded,
+                      size: 13,
+                      color: isSelected ? C.purple : C.lavender,
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '$dist km',
+                        overflow: TextOverflow.ellipsis,
+                        style: t(11,
+                            w: FontWeight.w700,
+                            c: isSelected ? C.text : Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Icon(
-              Icons.location_on_rounded,
-              size: isSelected ? 26 : 22,
-              color: isSelected ? C.violet : Colors.white70,
-            ),
-          ],
+              const SizedBox(height: 2),
+              Icon(
+                Icons.location_on_rounded,
+                size: isSelected ? 26 : 22,
+                color: isSelected ? C.violet : Colors.white70,
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildSelectedCard(Map<String, dynamic> p) {
     final name = p['name'] ?? 'Pharmacy';
-    final area = p['area'] ?? 'Lahore';
+    final area = p['area'] ?? p['address'] ?? 'Nearby';
     final dist = p['distance_km']?.toString() ?? '0.0';
 
     return Container(
@@ -348,7 +369,7 @@ class _PharmacyMapWidgetState extends State<PharmacyMapWidget>
                   demo.Pharmacy(
                     name,
                     area,
-                    p['description'] ?? 'Demo pharmacy in Lahore.',
+                    p['description'] ?? 'Verified partner pharmacy branch.',
                     p['opening_hours'] ?? '9:00 AM – 11:00 PM',
                     Icons.local_pharmacy_outlined,
                   ),
@@ -390,12 +411,13 @@ class _MapCanvasPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
-    for (final r in [45.0, 85.0, 125.0]) {
-      canvas.drawCircle(center, r, ringPaint);
+    final maxRing = (math.min(size.width, size.height) / 2 - 20).clamp(45.0, 130.0);
+    for (final frac in [0.35, 0.68, 1.0]) {
+      canvas.drawCircle(center, maxRing * frac, ringPaint);
     }
 
     // Glowing pulsing range wave
-    final pulseRadius = 30.0 + (pulse * 90.0);
+    final pulseRadius = (maxRing * 0.25) + (pulse * (maxRing * 0.70));
     final pulsePaint = Paint()
       ..color = const Color(0xFF8B5CF6).withValues(alpha: (1.0 - pulse) * 0.35)
       ..style = PaintingStyle.stroke

@@ -5,7 +5,7 @@ class PharmacyBase(BaseModel):
     name: str
     area: str
     address: str
-    city: str = "Lahore"
+    city: str = ""
     latitude: float
     longitude: float
     phone: Optional[str] = None

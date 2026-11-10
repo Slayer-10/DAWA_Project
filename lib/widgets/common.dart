@@ -330,7 +330,7 @@ void showMedicineSheet(BuildContext context, Medicine m) {
           _detailRow('Strength', m.strength),
           _detailRow('Form', m.form),
           _detailRow('Category', m.category),
-          _detailRow('Availability', 'Verified in demo catalogue'),
+          _detailRow('Availability', 'Verified in healthcare catalogue'),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(14),

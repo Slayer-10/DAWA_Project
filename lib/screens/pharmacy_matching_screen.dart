@@ -213,7 +213,7 @@ class _PharmacyMatchingScreenState extends State<PharmacyMatchingScreen> {
 
   Widget _buildPharmacyCard(Map<String, dynamic> p) {
     final name = p['pharmacy_name'] ?? 'Pharmacy';
-    final address = p['address'] ?? 'Lahore';
+    final address = p['address'] ?? '';
     final dist = p['distance_km'] ?? '0.0';
     final isFull = p['fully_available'] as bool? ?? false;
     final total = p['total_estimated_cost_pkr'] ?? 0;

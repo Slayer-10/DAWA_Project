@@ -9,9 +9,12 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_number = Column(String(50), unique=True, index=True, nullable=False)
     patient_id = Column(Integer, ForeignKey("patients.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     pharmacy_id = Column(Integer, ForeignKey("pharmacies.id", ondelete="CASCADE"), nullable=False)
     invoice_id = Column(Integer, ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True)
     prescription_id = Column(Integer, ForeignKey("prescriptions.id", ondelete="SET NULL"), nullable=True)
+    prescription_ref = Column(String(100), nullable=True)
+    items = Column(Text, nullable=True)
     
     fulfillment_type = Column(String(50), default="pickup")  # "pickup" or "delivery"
     delivery_address = Column(String(255), nullable=True)
@@ -30,13 +33,14 @@ class Order(Base):
     # "Delivered" / "Collected"
     # "Rejected by Pharmacist"
 
-    payment_method = Column(String(50), default="Pay at Pickup / Cash on Delivery (Demo)")
+    payment_method = Column(String(50), default="Pay at Pickup / Cash on Delivery")
     rejection_reason = Column(Text, nullable=True)
     pharmacist_notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     patient = relationship("Patient", back_populates="orders")
+    user = relationship("User", back_populates="orders")
     pharmacy = relationship("Pharmacy", back_populates="orders")
     invoice = relationship("Invoice", back_populates="order")
     prescription = relationship("Prescription", back_populates="orders")

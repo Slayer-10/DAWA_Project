@@ -19,9 +19,8 @@ def find_matching_pharmacies(
     2. Then by nearest distance to patient (using actual GPS coordinates)
     Also lists missing medicines for partial matches.
     """
-    # Default patient location if none provided (Gulberg, Lahore)
-    p_lat = patient_lat if patient_lat is not None else 31.5204
-    p_lon = patient_lon if patient_lon is not None else 74.3587
+    p_lat = patient_lat or 0.0
+    p_lon = patient_lon or 0.0
 
     pharmacies = db.query(Pharmacy).all()
     results = []

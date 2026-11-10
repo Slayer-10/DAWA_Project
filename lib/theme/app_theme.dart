@@ -18,6 +18,13 @@ class C {
   static const Color amber = Color(0xFFD97706);      // Warning Amber
   static const Color red = Color(0xFFDC2626);        // Error Red
   static const Color surface = Color(0xFFFFFFFF);
+  static const Color card = surface;
+  static const Color primary = purple;
+  static const Color primaryLight = light;
+  static const Color textPrimary = text;
+  static const Color textSecondary = sub;
+  static const Color danger = red;
+  static const Color success = green;
 
   static Color a(Color c, double o) => c.withValues(alpha: o);
 }

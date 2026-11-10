@@ -21,33 +21,7 @@ class LocationService {
   LocationService._();
   static final LocationService instance = LocationService._();
 
-  // Fictional fallback locations in Lahore for manual selection
-  static const List<DawaLocation> manualLocations = [
-    DawaLocation(
-      label: 'Gulberg III',
-      address: 'Main Boulevard, Gulberg III, Lahore',
-      latitude: 31.5204,
-      longitude: 74.3587,
-    ),
-    DawaLocation(
-      label: 'Model Town',
-      address: 'Bank Square, Model Town, Lahore',
-      latitude: 31.4820,
-      longitude: 74.3160,
-    ),
-    DawaLocation(
-      label: 'DHA Phase 5',
-      address: 'Sector C Commercial, DHA Phase 5, Lahore',
-      latitude: 31.4673,
-      longitude: 74.4024,
-    ),
-    DawaLocation(
-      label: 'Johar Town',
-      address: 'Block G-4, Johar Town, Lahore',
-      latitude: 31.4697,
-      longitude: 74.2728,
-    ),
-  ];
+  static const List<DawaLocation> manualLocations = [];
 
   final ValueNotifier<DawaLocation?> currentLocation =
       ValueNotifier<DawaLocation?>(null);

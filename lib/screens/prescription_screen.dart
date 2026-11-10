@@ -177,7 +177,7 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
                 style: t(20, w: FontWeight.w800, c: C.indigo)),
             const SizedBox(height: 8),
             Text(
-              'Upload a prescription photo to identify medicines and check pharmacy stock across Lahore.',
+              'Upload a prescription photo to identify medicines and check nearby pharmacy stock.',
               textAlign: TextAlign.center,
               style: t(14, c: C.sub, h: 1.5),
             ),

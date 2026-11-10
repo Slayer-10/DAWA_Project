@@ -82,7 +82,7 @@ def _format_invoice_response(invoice: Invoice) -> InvoiceResponse:
         patient_id=invoice.patient_id,
         pharmacy_id=invoice.pharmacy_id,
         pharmacy_name=invoice.pharmacy.name if invoice.pharmacy else "DAWA Pharmacy",
-        pharmacy_address=invoice.pharmacy.address if invoice.pharmacy else "Lahore, Pakistan",
+        pharmacy_address=invoice.pharmacy.address if invoice.pharmacy else "",
         prescription_id=invoice.prescription_id,
         subtotal=invoice.subtotal,
         delivery_fee=invoice.delivery_fee,

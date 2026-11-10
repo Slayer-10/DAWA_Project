@@ -121,7 +121,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
       ('Awaiting Pharmacist Verification', 'Pharmacist reviewing prescription details'),
       ('Prescription Verified', 'Prescription and dosage verified'),
       ('Preparing Order', 'Medicines packed and sealed with security tag'),
-      ('Out for Delivery', 'Rider dispatched to your address in Lahore'),
+      ('Out for Delivery', 'Rider dispatched to your delivery address'),
       ('Delivered', 'Order safely received by patient'),
     ];
 
@@ -194,7 +194,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                     Text(
                       isPickup
                           ? 'Pharmacy Pickup at $pharmacyName'
-                          : 'Home Delivery in Lahore',
+                          : 'Home Delivery',
                       style: t(13, w: FontWeight.w600, c: C.text),
                     ),
                   ],
@@ -269,7 +269,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Demo Notice: Pharmacist verification controls are accessible via Profile > Pharmacist Portal.',
+                    'Pharmacist verification controls are accessible via Profile > Pharmacist Portal.',
                     style: t(12, c: C.indigo, h: 1.4),
                   ),
                 ),

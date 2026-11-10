@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dawa_brand_mark.dart';
+import '../services/auth_state.dart';
+import 'auth/login_screen.dart';
+import 'admin/admin_shell.dart';
 import 'shell.dart';
 
 /// Premium DAWA welcome screen. Replaces only the existing welcome screen.
@@ -56,12 +59,27 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     _homeTimer = Timer(const Duration(milliseconds: 5800), _goHome);
   }
 
-  void _goHome() {
+  void _goHome() async {
     if (!mounted || _navigated) return;
     _navigated = true;
+
+    if (!AuthState.instance.initialized) {
+      await AuthState.instance.init();
+    }
+    if (!mounted) return;
+
+    final Widget targetScreen;
+    if (AuthState.instance.isAuthenticated) {
+      targetScreen = (AuthState.instance.role == 'pharmacy_admin')
+          ? const PharmacyAdminShell()
+          : const AppShell();
+    } else {
+      targetScreen = const LoginScreen();
+    }
+
     Navigator.of(context).pushReplacement(PageRouteBuilder<void>(
       transitionDuration: const Duration(milliseconds: 650),
-      pageBuilder: (_, __, ___) => const AppShell(),
+      pageBuilder: (_, __, ___) => targetScreen,
       transitionsBuilder: (_, animation, __, child) => FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
         child: child,

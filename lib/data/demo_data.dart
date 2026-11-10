@@ -38,15 +38,15 @@ class Pharmacy {
 }
 
 const List<Pharmacy> pharmacies = [
-  Pharmacy('City Care Pharmacy', 'Gulberg, Lahore (demo)',
-      'A fictional neighbourhood pharmacy used to demonstrate the DAWA experience.',
-      '9:00 AM – 11:00 PM (demo)', Icons.local_pharmacy_outlined),
-  Pharmacy('HealthPlus Pharmacy', 'Model Town, Lahore (demo)',
-      'A fictional pharmacy with everyday medicines and health products.',
-      '8:00 AM – 10:00 PM (demo)', Icons.medication_liquid_outlined),
-  Pharmacy('MediPoint Pharmacy', 'DHA Phase 5, Lahore (demo)',
-      'A fictional pharmacy used to preview how DAWA presents pharmacy information.',
-      '24 hours (demo)', Icons.health_and_safety_outlined),
+  Pharmacy('City Care Pharmacy', 'Local Area',
+      'Verified neighbourhood pharmacy providing prescription medicines.',
+      '9:00 AM – 11:00 PM', Icons.local_pharmacy_outlined),
+  Pharmacy('HealthPlus Pharmacy', 'Local Area',
+      'Pharmacy with everyday medicines and healthcare products.',
+      '8:00 AM – 10:00 PM', Icons.medication_liquid_outlined),
+  Pharmacy('MediPoint Pharmacy', 'Local Area',
+      'Licensed pharmacy providing prescription fulfillment and healthcare support.',
+      '24 hours', Icons.health_and_safety_outlined),
 ];
 
 class DemoLocation {
@@ -55,9 +55,7 @@ class DemoLocation {
 }
 
 const List<DemoLocation> locations = [
-  DemoLocation('Home Address', 'Lahore, Pakistan'),
-  DemoLocation('Office', 'Gulberg III, Lahore'),
-  DemoLocation("Parents' Home", 'Model Town, Lahore'),
+  DemoLocation('Current Location', 'Select your delivery address'),
 ];
 
 final ValueNotifier<DemoLocation> selectedLocation =
@@ -92,7 +90,7 @@ class DemoNotification {
 
 const List<DemoNotification> notifications = [
   DemoNotification('Welcome to DAWA',
-      'Upload a prescription to explore the DAWA workflow. This version uses demo data.', 'Today'),
+      'Upload a prescription or explore genuine nearby pharmacy stock in real time.', 'Today'),
   DemoNotification('Pharmacist review',
       'Prescription orders should be reviewed by a qualified pharmacist before approval.', 'Today'),
   DemoNotification('Health reminder',

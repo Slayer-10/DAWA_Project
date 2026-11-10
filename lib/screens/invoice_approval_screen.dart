@@ -97,7 +97,7 @@ class _InvoiceApprovalScreenState extends State<InvoiceApprovalScreen> {
   Widget build(BuildContext context) {
     final invNumber = widget.invoice['invoice_number'] ?? 'INV-2026-0000';
     final pharmacyName = widget.invoice['pharmacy_name'] ?? 'DAWA Pharmacy';
-    final pharmacyAddress = widget.invoice['pharmacy_address'] ?? 'Lahore';
+    final pharmacyAddress = widget.invoice['pharmacy_address'] ?? '';
     final subtotal = (widget.invoice['subtotal'] as num?)?.toDouble() ?? 0.0;
     final grandTotal = (widget.invoice['grand_total'] as num?)?.toDouble() ?? subtotal;
     final List items = widget.invoice['items'] ?? [];

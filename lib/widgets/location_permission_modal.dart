@@ -68,7 +68,7 @@ class _LocationPermissionModalState extends State<LocationPermissionModal> {
       case LocationPermissionResult.unavailable:
         setState(() {
           _statusMessage =
-              'Unable to fetch GPS position. Please pick a demo location in Lahore.';
+              'Unable to fetch GPS position. Please pick your location.';
           _showManualSelection = true;
         });
         break;
@@ -178,7 +178,7 @@ class _LocationPermissionModalState extends State<LocationPermissionModal> {
               ),
             ] else ...[
               Text(
-                'Select Your Area in Lahore (Demo)',
+                'Select Your Location',
                 style: t(15, w: FontWeight.w700, c: C.indigo),
               ),
               const SizedBox(height: 10),

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/location_state.dart';
 import '../navigation/nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
@@ -152,8 +153,9 @@ class _ExtractedMedicineReviewScreenState
 
     try {
       final loc = LocationService.instance.currentLocation.value;
-      final lat = loc?.latitude ?? 31.5204;
-      final lon = loc?.longitude ?? 74.3587;
+      final locState = LocationState.instance;
+      final lat = locState.lat ?? loc?.latitude ?? 0.0;
+      final lon = locState.lng ?? loc?.longitude ?? 0.0;
 
       final res = await ApiService.instance.confirmPrescriptionAndMatch(
         prescriptionId: widget.prescriptionId,

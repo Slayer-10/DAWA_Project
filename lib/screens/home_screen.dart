@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../data/demo_data.dart' as demo;
+import 'package:url_launcher/url_launcher.dart';
 import '../navigation/nav.dart';
 import '../services/api_service.dart';
-import '../services/location_service.dart';
+import '../services/location_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/pharmacy_map_widget.dart';
@@ -36,13 +36,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _query = '';
 
   List<Map<String, dynamic>> _nearbyPharmacies = [];
+  List<Map<String, dynamic>> _registeredPharmacies = [];
   List<Map<String, dynamic>> _searchedMedicines = [];
   List<Map<String, dynamic>> _recentOrders = [];
   bool _loadingPharmacies = true;
   bool _searchingMeds = false;
+  int _searchRadiusKm = 5;
 
   void _onFocusChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onLocationChanged() {
+    if (mounted) {
+      _loadNearbyPharmacies();
+    }
   }
 
   @override
@@ -51,9 +59,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
     _focus.addListener(_onFocusChanged);
+    LocationState.instance.addListener(_onLocationChanged);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _loadRecentOrders();
+      await LocationState.instance.init();
       _loadNearbyPharmacies();
     });
   }
@@ -72,22 +82,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadNearbyPharmacies() async {
-    setState(() => _loadingPharmacies = true);
-    final loc = LocationService.instance.currentLocation.value;
-    final lat = loc?.latitude ?? 31.5204;
-    final lon = loc?.longitude ?? 74.3587;
-
-    try {
-      final list = await ApiService.instance.getNearbyPharmacies(lat, lon);
+    final loc = LocationState.instance;
+    if (!loc.hasLocation) {
       if (mounted) {
         setState(() {
-          _nearbyPharmacies = list;
+          _registeredPharmacies = [];
+          _nearbyPharmacies = [];
           _loadingPharmacies = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingPharmacies = false);
+      return;
     }
+
+    if (mounted) setState(() => _loadingPharmacies = true);
+
+    final lat = loc.lat!;
+    final lon = loc.lng!;
+
+    List<Map<String, dynamic>> regList = [];
+    try {
+      regList = await ApiService.instance.getRegisteredNearbyPharmacies(lat, lon, radius: 20000);
+      for (final p in regList) {
+        p['is_verified'] = true;
+      }
+    } catch (_) {}
+
+    List<Map<String, dynamic>> osmList = [];
+    int radiusUsed = 5;
+
+    for (final r in [5000, 10000, 20000]) {
+      radiusUsed = r ~/ 1000;
+      try {
+        osmList = await ApiService.instance.getRealNearbyPharmacies(lat, lon, radius: r);
+        if (osmList.isNotEmpty) break;
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _registeredPharmacies = regList;
+      _nearbyPharmacies = [...regList, ...osmList];
+      _searchRadiusKm = radiusUsed;
+      _loadingPharmacies = false;
+    });
   }
 
   Future<void> _loadRecentOrders() async {
@@ -132,6 +169,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    LocationState.instance.removeListener(_onLocationChanged);
     _timer?.cancel();
     _searchDebounce?.cancel();
     _search.dispose();
@@ -178,11 +216,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _buildLocationAndRadar(),
         const SizedBox(height: 28),
 
-        // 7. Nearby Pharmacies Cards
+        // 7. Verified Registered Pharmacies Section
+        _buildVerifiedPharmaciesSection(),
+
+        // 8. Available Nearby Pharmacies Cards (OSM & Live)
         _buildNearbyPharmaciesSection(),
         const SizedBox(height: 28),
 
-        // 8. Healthcare Features & Verification Safety Callout
+        // 9. Healthcare Features & Verification Safety Callout
         _buildTrustSection(),
       ],
     );
@@ -305,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: Text(
-              'Found ${_searchedMedicines.length} medicines in Lahore inventory:',
+              'Found ${_searchedMedicines.length} medicines in inventory:',
               style: t(13, w: FontWeight.w700, c: C.indigo),
             ),
           ),
@@ -431,7 +472,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 8),
             Text(
-              'Upload your prescription securely to identify required medicines and discover real-time inventory at nearby Lahore pharmacies.',
+              'Upload your prescription securely to identify required medicines and discover real-time inventory at nearby pharmacies.',
               style: t(13.5, c: Colors.white.withValues(alpha: 0.88), h: 1.45),
             ),
             const SizedBox(height: 20),
@@ -491,7 +532,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       (
         'Pharmacies',
-        '4 demo stores',
+        'Nearby verified',
         Icons.local_pharmacy_outlined,
         () => push(context, const ExploreScreen()),
       ),
@@ -559,87 +600,269 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildLocationAndRadar() {
-    return FadeSlideEntrance(
-      delay: const Duration(milliseconds: 300),
-      slideOffset: 16,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SectionHeader(
-            'Nearby Pharmacies Radar',
-            subtitle: 'Real-time distance projection in Lahore',
-            trailing: IconButton(
-              icon: const Icon(Icons.my_location_rounded, color: C.purple, size: 20),
-              tooltip: 'Refresh GPS',
-              onPressed: _loadNearbyPharmacies,
-            ),
-          ),
-          PharmacyMapWidget(
-            patientLat: 31.5204,
-            patientLon: 74.3587,
-            pharmacies: _nearbyPharmacies,
-            onSelectPharmacy: (p) {
-              push(
-                context,
-                PharmacyDetailScreen(
-                  demo.Pharmacy(
-                    p['name'] ?? 'Pharmacy',
-                    p['area'] ?? 'Lahore',
-                    p['description'] ?? 'Demo pharmacy in Lahore.',
-                    p['opening_hours'] ?? '9:00 AM – 11:00 PM',
-                    Icons.local_pharmacy_outlined,
-                  ),
+    return ListenableBuilder(
+      listenable: LocationState.instance,
+      builder: (context, _) {
+        final loc = LocationState.instance;
+        final shortLabel = loc.label.isNotEmpty ? loc.label.split(',')[0].trim() : 'your location';
+        return FadeSlideEntrance(
+          delay: const Duration(milliseconds: 300),
+          slideOffset: 16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeader(
+                'Nearby Pharmacies Radar',
+                subtitle: 'Real-time distance projection near $shortLabel',
+                trailing: IconButton(
+                  icon: const Icon(Icons.my_location_rounded, color: C.purple, size: 20),
+                  tooltip: 'Refresh GPS',
+                  onPressed: () => LocationState.instance.useCurrentLocation(),
                 ),
-              );
-            },
+              ),
+              if (_loadingPharmacies || loc.loading)
+                Container(
+                  height: 280,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1B4B),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(color: C.purple, strokeWidth: 2.5),
+                  ),
+                )
+              else if (loc.source == 'none')
+                Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1B4B),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.location_off_rounded, color: C.lavender, size: 36),
+                        const SizedBox(height: 10),
+                        Text('Location not set', style: t(15, w: FontWeight.w700, c: Colors.white)),
+                        const SizedBox(height: 4),
+                        Text(loc.error ?? 'Enable GPS or select an area', style: t(12.5, c: Colors.white70)),
+                        const SizedBox(height: 14),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(backgroundColor: C.purple),
+                          icon: const Icon(Icons.place_outlined, size: 18),
+                          label: const Text('Choose location'),
+                          onPressed: () => showLocationPickerSheet(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else if (_nearbyPharmacies.isEmpty)
+                Container(
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1B4B),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        'No pharmacies within $_searchRadiusKm km of $shortLabel',
+                        textAlign: TextAlign.center,
+                        style: t(14, w: FontWeight.w600, c: Colors.white70),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                PharmacyMapWidget(
+                  patientLat: loc.lat ?? 0.0,
+                  patientLon: loc.lng ?? 0.0,
+                  pharmacies: _nearbyPharmacies,
+                  onSelectPharmacy: (p) async {
+                    final lat = p['lat'];
+                    final lng = p['lng'] ?? p['lon'];
+                    if (lat != null && lng != null) {
+                      final url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildNearbyPharmaciesSection() {
-    if (_loadingPharmacies) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(color: C.purple, strokeWidth: 2.5),
-        ),
-      );
-    }
+    return ListenableBuilder(
+      listenable: LocationState.instance,
+      builder: (context, _) {
+        final loc = LocationState.instance;
+        final shortLabel = loc.label.isNotEmpty ? loc.label.split(',')[0].trim() : 'your location';
+
+        if (_loadingPharmacies || loc.loading) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(color: C.purple, strokeWidth: 2.5),
+            ),
+          );
+        }
+
+        return FadeSlideEntrance(
+          delay: const Duration(milliseconds: 350),
+          slideOffset: 16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeader(
+                'Available Pharmacies',
+                subtitle: 'Compare availability and proximity',
+                trailing: TextButton(
+                  onPressed: () => push(context, const ExploreScreen()),
+                  child: Text('View All', style: t(13, w: FontWeight.w700, c: C.purple)),
+                ),
+              ),
+              if (loc.source == 'none')
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Text('Location not set', style: t(14, c: C.sub)),
+                        const SizedBox(height: 8),
+                        FilledButton.tonal(
+                          onPressed: () => showLocationPickerSheet(context),
+                          child: const Text('Choose location'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else if (_nearbyPharmacies.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Text(
+                      'No pharmacies within $_searchRadiusKm km of $shortLabel',
+                      textAlign: TextAlign.center,
+                      style: t(14, c: C.sub),
+                    ),
+                  ),
+                )
+              else
+                for (final p in _nearbyPharmacies.take(3))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: DawaSurface(
+                      padding: const EdgeInsets.all(16),
+                      onTap: () async {
+                        final lat = p['lat'];
+                        final lng = p['lng'] ?? p['lon'];
+                        if (lat != null && lng != null) {
+                          final url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: C.light,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(Icons.local_pharmacy_rounded, color: C.purple, size: 24),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(p['name'] ?? 'Pharmacy', style: t(15.5, w: FontWeight.w700)),
+                                const SizedBox(height: 3),
+                                Text(
+                                  [
+                                    if (p['address'] != null && p['address'].toString().isNotEmpty) p['address'].toString(),
+                                    if (p['distance_km'] != null) '${p['distance_km']} km away',
+                                  ].join(' • '),
+                                  style: t(12.5, c: C.sub),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (p['is_verified'] == true)
+                                const DawaBadge(
+                                  label: 'Verified',
+                                  bg: Color(0xFFDCFCE7),
+                                  text: Color(0xFF15803D),
+                                  icon: Icons.verified_rounded,
+                                )
+                              else
+                                const DawaBadge(
+                                  label: 'Open',
+                                  bg: Color(0xFFDCFCE7),
+                                  text: Color(0xFF15803D),
+                                  icon: Icons.check_circle_rounded,
+                                ),
+                              const SizedBox(height: 6),
+                              Text(
+                                (p['opening_hours'] != null && p['opening_hours'].toString().isNotEmpty)
+                                    ? p['opening_hours'].toString()
+                                    : (p['is_verified'] == true ? 'Live Stock Ready' : 'Pickup & Delivery'),
+                                style: t(11, c: C.sub),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVerifiedPharmaciesSection() {
+    if (_registeredPharmacies.isEmpty) return const SizedBox.shrink();
 
     return FadeSlideEntrance(
-      delay: const Duration(milliseconds: 350),
-      slideOffset: 16,
+      delay: const Duration(milliseconds: 320),
+      slideOffset: 14,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionHeader(
-            'Available Pharmacies',
-            subtitle: 'Compare availability and proximity',
+            'Verified Pharmacies',
+            subtitle: 'Directly registered network partners with live stock',
             trailing: TextButton(
               onPressed: () => push(context, const ExploreScreen()),
-              child: Text('View All', style: t(13, w: FontWeight.w700, c: C.purple)),
+              child: Text('Explore Stock', style: t(13, w: FontWeight.w700, c: C.purple)),
             ),
           ),
-          for (final p in _nearbyPharmacies.take(3))
+          for (final p in _registeredPharmacies.take(3))
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: DawaSurface(
                 padding: const EdgeInsets.all(16),
-                onTap: () {
-                  push(
-                    context,
-                    PharmacyDetailScreen(
-                      demo.Pharmacy(
-                        p['name'] ?? 'Pharmacy',
-                        p['area'] ?? 'Lahore',
-                        p['description'] ?? 'Demo pharmacy in Lahore.',
-                        p['opening_hours'] ?? '9:00 AM – 11:00 PM',
-                        Icons.local_pharmacy_outlined,
-                      ),
-                    ),
-                  );
+                onTap: () async {
+                  final lat = p['lat'];
+                  final lng = p['lng'] ?? p['lon'];
+                  if (lat != null && lng != null) {
+                    final url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
                 },
                 child: Row(
                   children: [
@@ -650,7 +873,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         color: C.light,
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.local_pharmacy_rounded, color: C.purple, size: 24),
+                      child: const Icon(Icons.verified_user_rounded, color: C.purple, size: 24),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -660,7 +883,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Text(p['name'] ?? 'Pharmacy', style: t(15.5, w: FontWeight.w700)),
                           const SizedBox(height: 3),
                           Text(
-                            '${p['address']} • ${p['distance_km']} km away',
+                            [
+                              if (p['address'] != null && p['address'].toString().isNotEmpty) p['address'].toString(),
+                              if (p['distance_km'] != null) '${p['distance_km']} km away',
+                            ].join(' • '),
                             style: t(12.5, c: C.sub),
                           ),
                         ],
@@ -671,19 +897,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         const DawaBadge(
-                          label: 'Open',
+                          label: 'Verified',
                           bg: Color(0xFFDCFCE7),
                           text: Color(0xFF15803D),
-                          icon: Icons.check_circle_rounded,
+                          icon: Icons.verified_rounded,
                         ),
                         const SizedBox(height: 6),
-                        Text('Pickup & Delivery', style: t(11, c: C.sub)),
+                        Text(
+                          (p['opening_hours'] != null && p['opening_hours'].toString().isNotEmpty)
+                              ? p['opening_hours'].toString()
+                              : 'Live Stock Ready',
+                          style: t(11, c: C.sub),
+                        ),
                       ],
                     ),
                   ],
                 ),
               ),
             ),
+          const SizedBox(height: 16),
         ],
       ),
     );

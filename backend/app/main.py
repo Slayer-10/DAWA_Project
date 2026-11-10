@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
-from app.routers import location, medicines, ocr, prescriptions, invoices, orders, admin
+from app.routers import (
+    location, medicines, ocr, prescriptions, invoices, orders, admin,
+    real_pharmacies, geocoding, auth, admin_pharmacy
+)
 from app.core.config import settings
 
 app = FastAPI(
@@ -25,14 +28,25 @@ app.add_middleware(
 def on_startup():
     init_db()
 
-# Register Routers
+# Register Routers (support both /api and root paths)
+app.include_router(auth.router)
+app.include_router(auth.router, prefix=settings.API_PREFIX)
+app.include_router(admin_pharmacy.router)
+app.include_router(admin_pharmacy.router, prefix=settings.API_PREFIX)
+
+app.include_router(orders.router)
+app.include_router(orders.router, prefix=settings.API_PREFIX)
+
 app.include_router(location.router, prefix=settings.API_PREFIX)
 app.include_router(medicines.router, prefix=settings.API_PREFIX)
 app.include_router(ocr.router, prefix=settings.API_PREFIX)
 app.include_router(prescriptions.router, prefix=settings.API_PREFIX)
 app.include_router(invoices.router, prefix=settings.API_PREFIX)
-app.include_router(orders.router, prefix=settings.API_PREFIX)
 app.include_router(admin.router, prefix=settings.API_PREFIX)
+app.include_router(real_pharmacies.router)
+app.include_router(real_pharmacies.router, prefix=settings.API_PREFIX)
+app.include_router(geocoding.router)
+app.include_router(geocoding.router, prefix=settings.API_PREFIX)
 
 @app.get("/")
 def root():

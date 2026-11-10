@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/location_state.dart';
 import '../navigation/nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
@@ -31,10 +32,8 @@ class _FulfillmentSelectionScreenState
   @override
   void initState() {
     super.initState();
-    final loc = LocationService.instance.currentLocation.value;
-    final defaultAddr = loc != null
-        ? '${loc.label}, ${loc.address}'
-        : 'Gulberg III, Main Boulevard, Lahore';
+    final locState = LocationState.instance;
+    final defaultAddr = locState.label.isNotEmpty ? locState.label : 'Select Delivery Address';
     _addressCtrl = TextEditingController(text: defaultAddr);
   }
 
@@ -70,8 +69,8 @@ class _FulfillmentSelectionScreenState
         lat: lat,
         lon: lon,
         paymentMethod: isDelivery
-            ? 'Cash on Delivery (Demo)'
-            : 'Pay at Pharmacy Pickup Counter (Demo)',
+            ? 'Cash on Delivery'
+            : 'Pay at Pharmacy Pickup Counter',
       );
 
       if (!mounted) return;
@@ -98,7 +97,7 @@ class _FulfillmentSelectionScreenState
     final finalTotal = subtotal + deliveryFee;
 
     final pharmacyName = widget.invoice['pharmacy_name'] ?? 'DAWA Pharmacy';
-    final pharmacyAddress = widget.invoice['pharmacy_address'] ?? 'Lahore';
+    final pharmacyAddress = widget.invoice['pharmacy_address'] ?? '';
 
     return PageScaffold(
       title: 'Choose Fulfillment',
@@ -159,7 +158,7 @@ class _FulfillmentSelectionScreenState
           _buildOptionCard(
             type: 'delivery',
             title: 'Home Delivery',
-            subtitle: 'Standard delivery across Lahore • PKR 150',
+            subtitle: 'Standard home delivery • PKR 150',
             icon: Icons.local_shipping_outlined,
             fee: 'PKR 150',
             isSelected: isDelivery,
@@ -350,15 +349,15 @@ class _FulfillmentSelectionScreenState
         TextField(
           controller: _addressCtrl,
           decoration: InputDecoration(
-            labelText: 'Delivery Address in Lahore',
+            labelText: 'Delivery Address',
             hintText: 'House/Flat #, Street, Area',
             prefixIcon: const Icon(Icons.home_outlined),
             suffixIcon: IconButton(
               icon: const Icon(Icons.my_location_rounded, color: C.purple),
               onPressed: () {
-                final loc = LocationService.instance.currentLocation.value;
-                if (loc != null) {
-                  _addressCtrl.text = '${loc.label}, ${loc.address}';
+                final locState = LocationState.instance;
+                if (locState.label.isNotEmpty) {
+                  _addressCtrl.text = locState.label;
                 }
               },
             ),
