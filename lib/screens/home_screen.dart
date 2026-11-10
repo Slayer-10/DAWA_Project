@@ -294,7 +294,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           focusNode: _focus,
           onChanged: _onSearchChanged,
           decoration: InputDecoration(
-            hintText: 'Search medicines (e.g. Panadol, Augmentin)...',
+            hintText: 'Search medicines by name or brand...',
             hintStyle: t(14, c: const Color(0xFF9CA3AF)),
             prefixIcon: const Icon(Icons.search_rounded, color: C.purple, size: 22),
             suffixIcon: _query.isNotEmpty

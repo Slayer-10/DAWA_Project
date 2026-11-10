@@ -7,14 +7,7 @@ class Medicine {
   const Medicine(this.name, this.strength, this.category, this.form);
 }
 
-const List<Medicine> medicines = [
-  Medicine('Panadol', '500 mg', 'Pain & Fever', 'Tablet'),
-  Medicine('Brufen', '400 mg', 'Pain & Inflammation', 'Tablet'),
-  Medicine('Augmentin', '625 mg', 'Antibiotic (prescription required)', 'Tablet'),
-  Medicine('Calpol', '120 mg/5 ml', 'Pain & Fever', 'Syrup'),
-  Medicine('Disprin', '300 mg', 'Pain Relief', 'Soluble tablet'),
-  Medicine('Vitamin C', '500 mg', 'Supplement', 'Tablet'),
-];
+const List<Medicine> medicines = [];
 
 class Product {
   final String name, category;
@@ -64,7 +57,7 @@ final ValueNotifier<DemoLocation> selectedLocation =
 final ValueNotifier<int> tabIndex = ValueNotifier<int>(0);
 
 final ValueNotifier<List<Medicine>> recentlyViewed =
-    ValueNotifier<List<Medicine>>([medicines[0], medicines[1], medicines[5]]);
+    ValueNotifier<List<Medicine>>([]);
 
 void markViewed(Medicine m) {
   final list = List<Medicine>.from(recentlyViewed.value)

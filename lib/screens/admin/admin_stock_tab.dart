@@ -139,7 +139,7 @@ class _AdminStockTabState extends State<AdminStockTab> {
                     controller: nameCtrl,
                     decoration: InputDecoration(
                       labelText: 'Medicine Name',
-                      hintText: 'e.g. Panadol Extra',
+                      hintText: 'e.g. Paracetamol',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),

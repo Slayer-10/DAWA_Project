@@ -20,7 +20,7 @@ class MedicinesScreen extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Pharmacy inventory catalog.', style: t(14, c: C.sub)),
           const SizedBox(height: 16),
-          ResponsiveGrid(minTileWidth: 300, children: [for (final m in medicines) MedicineTile(m)]),
+          const ResponsiveGrid(minTileWidth: 300, children: <Widget>[]),
         ]),
       );
 }
@@ -109,7 +109,7 @@ class PharmacyDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           const SectionHeader('Sample Inventory', subtitle: 'Frequently dispensed medicines'),
-          ResponsiveGrid(minTileWidth: 300, children: [for (final m in medicines.take(4)) MedicineTile(m)]),
+          const ResponsiveGrid(minTileWidth: 300, children: <Widget>[]),
           const SizedBox(height: 20),
           Container(
             padding: const EdgeInsets.all(16),
@@ -447,11 +447,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Widget build(BuildContext context) {
     final loc = LocationState.instance;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 40),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           FadeSlideEntrance(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -568,7 +571,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 340),
                       child: Text(
-                        'No medicines in stock near ${loc.label.isNotEmpty ? loc.label : "your location"}. Try a larger area or change location.',
+                        "No medicines in stock nearby. Pharmacies haven't added stock yet, or try another location.",
                         textAlign: TextAlign.center,
                         style: t(13.5, c: C.sub),
                       ),
@@ -590,7 +593,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   _buildMedicineCard(med),
               ],
             ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -681,6 +686,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   List<Map<String, dynamic>> _orders = [];
   bool _loading = true;
   String _selectedStatus = 'All';
+  Timer? _pollTimer;
 
   static const List<String> _statusFilters = [
     'All',
@@ -695,6 +701,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void initState() {
     super.initState();
     _fetchOrders();
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) _pollOrdersQuietly();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _pollOrdersQuietly() async {
+    try {
+      final list = await ApiService.instance.getMyOrders();
+      if (mounted) {
+        setState(() {
+          _orders = list;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchOrders() async {
@@ -761,11 +787,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _fetchOrders,
+          color: C.purple,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -828,15 +861,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
           else if (_filteredOrders.isEmpty)
             const EmptyState(
               Icons.inventory_2_outlined,
-              'No orders found',
+              'No orders yet',
               'Confirmed and active orders will appear here with live updates.',
             )
           else
             for (int i = 0; i < _filteredOrders.length; i++)
               _buildOrderCard(_filteredOrders[i], i),
-        ],
+            ],
+          ),
+        ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildOrderCard(Map<String, dynamic> order, int index) {
@@ -861,15 +897,47 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(orderNum, style: t(16, w: FontWeight.w800, c: C.indigo)),
-                  DawaBadge(
-                    label: status.toUpperCase(),
-                    bg: const Color(0xFFF1EDFF),
-                    text: C.purple,
-                  ),
+                  () {
+                    final s = status.toLowerCase();
+                    Color bg;
+                    Color fg;
+                    if (s == 'pending' || s == 'order placed' || s == 'awaiting pharmacist verification') {
+                      bg = const Color(0xFFFFF7ED);
+                      fg = const Color(0xFFEA580C); // orange
+                    } else if (s == 'accepted') {
+                      bg = const Color(0xFFEFF6FF);
+                      fg = const Color(0xFF2563EB); // blue
+                    } else if (s == 'ready') {
+                      bg = const Color(0xFFF5F3FF);
+                      fg = const Color(0xFF7C3AED); // purple
+                    } else if (s == 'completed') {
+                      bg = const Color(0xFFF0FDF4);
+                      fg = const Color(0xFF16A34A); // green
+                    } else {
+                      bg = const Color(0xFFFEF2F2);
+                      fg = const Color(0xFFDC2626); // red
+                    }
+                    return DawaBadge(
+                      label: status.toUpperCase(),
+                      bg: bg,
+                      text: fg,
+                    );
+                  }(),
                 ],
               ),
               const SizedBox(height: 8),
               Text('$phName • $fulfillment', style: t(13, c: C.sub)),
+              if (order['items'] != null && (order['items'] as List).isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  (order['items'] as List)
+                      .map((it) => '${it['quantity'] ?? 1}x ${it['name'] ?? it['medicine_name'] ?? 'Medicine'}')
+                      .join(', '),
+                  style: t(13, w: FontWeight.w600, c: C.text),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

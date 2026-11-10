@@ -424,7 +424,7 @@ class _ExtractedMedicineReviewScreenState
             controller: form.nameCtrl,
             decoration: const InputDecoration(
               labelText: 'Medicine Name',
-              hintText: 'e.g. Augmentin, Panadol, Brufen',
+              hintText: 'e.g. Medicine Name',
               prefixIcon: Icon(Icons.medication_liquid_outlined),
             ),
           ),
