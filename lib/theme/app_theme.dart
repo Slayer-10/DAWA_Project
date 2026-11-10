@@ -291,7 +291,7 @@ class _FadeSlideEntranceState extends State<FadeSlideEntrance>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _opacity;
-  late Animation<double> _slide;
+  late Animation<Offset> _slide;
   Timer? _delayTimer;
 
   @override
@@ -303,14 +303,10 @@ class _FadeSlideEntranceState extends State<FadeSlideEntrance>
     );
 
     _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _slide = Tween<double>(begin: widget.slideOffset, end: 0.0)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
-
-    _ctrl.addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        setState(() {}); // Remove wrapper layers once completed
-      }
-    });
+    _slide = Tween<Offset>(
+      begin: Offset(0, widget.slideOffset > 0 ? 0.04 : 0.0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
 
     if (widget.delay == Duration.zero) {
       _ctrl.forward();
@@ -330,35 +326,12 @@ class _FadeSlideEntranceState extends State<FadeSlideEntrance>
 
   @override
   Widget build(BuildContext context) {
-    if (_ctrl.isCompleted) {
-      return widget.child;
-    }
-
-    return AnimatedBuilder(
-      animation: _ctrl,
-      child: widget.child,
-      builder: (context, child) {
-        final op = _opacity.value.clamp(0.0, 1.0);
-        if (op <= 0.05) {
-          return IgnorePointer(
-            ignoring: true,
-            child: Opacity(
-              opacity: 0.0,
-              child: child,
-            ),
-          );
-        }
-        return IgnorePointer(
-          ignoring: false,
-          child: Opacity(
-            opacity: op,
-            child: Transform.translate(
-              offset: Offset(0, _slide.value),
-              child: child,
-            ),
-          ),
-        );
-      },
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: widget.child,
+      ),
     );
   }
 }

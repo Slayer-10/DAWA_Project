@@ -41,12 +41,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _loadingPharmacies = true;
   bool _searchingMeds = false;
 
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
-    _focus.addListener(() => setState(() {}));
+    _focus.addListener(_onFocusChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadRecentOrders();
@@ -131,6 +135,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _timer?.cancel();
     _searchDebounce?.cancel();
     _search.dispose();
+    _focus.removeListener(_onFocusChanged);
     _focus.dispose();
     super.dispose();
   }
@@ -560,19 +565,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const SectionHeader(
-                'Nearby Pharmacies Radar',
-                subtitle: 'Real-time distance projection in Lahore',
-              ),
-              IconButton(
-                icon: const Icon(Icons.my_location_rounded, color: C.purple, size: 20),
-                tooltip: 'Refresh GPS',
-                onPressed: _loadNearbyPharmacies,
-              ),
-            ],
+          SectionHeader(
+            'Nearby Pharmacies Radar',
+            subtitle: 'Real-time distance projection in Lahore',
+            trailing: IconButton(
+              icon: const Icon(Icons.my_location_rounded, color: C.purple, size: 20),
+              tooltip: 'Refresh GPS',
+              onPressed: _loadNearbyPharmacies,
+            ),
           ),
           PharmacyMapWidget(
             patientLat: 31.5204,
@@ -614,18 +614,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const SectionHeader(
-                'Available Pharmacies',
-                subtitle: 'Compare availability and proximity',
-              ),
-              TextButton(
-                onPressed: () => push(context, const ExploreScreen()),
-                child: Text('View All', style: t(13, w: FontWeight.w700, c: C.purple)),
-              ),
-            ],
+          SectionHeader(
+            'Available Pharmacies',
+            subtitle: 'Compare availability and proximity',
+            trailing: TextButton(
+              onPressed: () => push(context, const ExploreScreen()),
+              child: Text('View All', style: t(13, w: FontWeight.w700, c: C.purple)),
+            ),
           ),
           for (final p in _nearbyPharmacies.take(3))
             Padding(
