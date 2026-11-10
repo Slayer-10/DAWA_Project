@@ -45,13 +45,28 @@ async def upload_prescription(
         f.write(contents)
 
     # Process through genuine pipeline offloaded to threadpool so asyncio loop stays responsive
-    response_data = await run_in_threadpool(process_prescription_pipeline, filepath)
+    try:
+        response_data = await run_in_threadpool(process_prescription_pipeline, filepath)
+    except ValueError as e:
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+        raise HTTPException(status_code=500, detail=f"Prescription processing error: {str(e)}")
 
     # Save prescription record in database
     db_prescription = Prescription(
         patient_id=patient_id,
         image_path=filename,
-        ocr_raw_text="",
+        ocr_raw_text=response_data.raw_text or "",
         ocr_confidence=1.0 if response_data.success else 0.0,
         status="PROCESSED" if response_data.success else "UNVERIFIED"
     )
@@ -66,7 +81,7 @@ async def upload_prescription(
             medicine_name=m.original_name,
             strength=m.strength,
             dosage_form=m.dosage_form,
-            quantity=m.quantity,
+            quantity=m.quantity or 1,
             instructions=m.instructions,
             confidence=m.confidence,
         )

@@ -85,12 +85,14 @@ class _ExtractedMedicineReviewScreenState
     super.initState();
     // Populate form ONLY with medicines genuinely returned by the backend
     for (final m in widget.initialMedicines) {
-      final name = (m['original_name'] ?? m['medicine_name'] ?? '') as String;
-      final strength = (m['strength'] ?? '') as String;
-      final form = (m['dosage_form'] ?? 'Tablet') as String;
-      final qty = m['quantity'] is int ? m['quantity'] as int : 10;
-      final instructions = (m['instructions'] ?? 'As directed by physician') as String;
-      final status = (m['field_status'] ?? 'verified_from_image') as String;
+      final name = (m['original_name'] ?? m['medicine_name'] ?? '').toString();
+      final strength = (m['strength'] ?? '').toString();
+      final form = (m['dosage_form'] ?? '').toString();
+      final qty = m['quantity'] is int
+          ? m['quantity'] as int
+          : (int.tryParse(m['quantity']?.toString() ?? '') ?? 1);
+      final instructions = (m['instructions'] ?? m['frequency'] ?? '').toString();
+      final status = (m['field_status'] ?? 'verified_from_image').toString();
 
       _forms.add(_MedicineItemForm(
         name: name,
@@ -116,9 +118,9 @@ class _ExtractedMedicineReviewScreenState
       _forms.add(_MedicineItemForm(
         name: '',
         strength: '',
-        form: 'Tablet',
-        qty: 10,
-        instructions: 'As directed',
+        form: '',
+        qty: 1,
+        instructions: '',
         fieldStatus: 'manually_entered',
       ));
     });

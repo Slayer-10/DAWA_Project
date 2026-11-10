@@ -99,11 +99,20 @@ class ApiService {
         ));
 
       final streamedRes =
-          await request.send().timeout(const Duration(seconds: 25));
+          await request.send().timeout(const Duration(seconds: 120));
       final res = await http.Response.fromStream(streamedRes);
 
       if (res.statusCode == 200) {
         return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+      
+      try {
+        final errJson = jsonDecode(utf8.decode(res.bodyBytes));
+        if (errJson is Map && errJson.containsKey('detail')) {
+          throw Exception(errJson['detail']);
+        }
+      } catch (e) {
+        if (e is! FormatException) rethrow;
       }
       throw Exception('Upload failed (${res.statusCode}): ${res.body}');
     } catch (e) {

@@ -18,10 +18,11 @@ class ExtractedMedicine(BaseModel):
     normalized_name: Optional[str] = None
     strength: Optional[str] = None
     dosage_form: Optional[str] = None
-    quantity: int = 1
+    quantity: Optional[int] = 1
     instructions: Optional[str] = None
     frequency: Optional[str] = None
     duration: Optional[str] = None
+    uncertain_fields: Optional[List[str]] = []
     field_status: str = "verified_from_image" # verified_from_image, needs_verification, manually_entered
     confidence: float = 0.90
 
@@ -55,7 +56,8 @@ class PrescriptionExtractionResponse(BaseModel):
     clinical_notes: List[str] = []
     warnings: List[str] = []
     requires_patient_review: bool = True
-    provider_used: str = "none"
+    provider_used: str = "Tesseract + Llama 3.2"
+    raw_text: Optional[str] = None
 
 class PrescriptionConfirmItem(BaseModel):
     medicine_name: str

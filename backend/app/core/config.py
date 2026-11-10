@@ -16,11 +16,15 @@ class Settings(BaseModel):
     DEFAULT_DELIVERY_FEE: float = 150.0  # PKR
     DEMO_ADMIN_KEY: str = os.getenv("DEMO_ADMIN_KEY", "dawa-pharmacist-demo-2026")
     
-    # Vision AI Model configuration
+    # OCR & Local AI (Tesseract + Ollama)
+    TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+    OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "180"))
+
+    # Legacy/Fallback Vision AI & Cloud OCR
     VISION_API_KEY: str = os.getenv("VISION_API_KEY", os.getenv("GEMINI_API_KEY", ""))
     VISION_MODEL: str = os.getenv("VISION_MODEL", "gemini-2.5-flash")
-    
-    # Document OCR API Key
     OCR_SPACE_API_KEY: str = os.getenv("OCR_SPACE_API_KEY", "")
 
 settings = Settings()

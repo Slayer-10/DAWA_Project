@@ -1,11 +1,11 @@
 import os
 import re
 import json
-import difflib
+import logging
 from typing import List, Dict, Any, Tuple, Optional
 import requests
-from PIL import Image, ImageOps, ImageEnhance
-from pypdf import PdfReader
+from PIL import Image, ImageOps, ImageEnhance, UnidentifiedImageError
+import pytesseract
 
 from app.schemas.prescription import (
     PrescriptionExtractionResponse,
@@ -15,306 +15,337 @@ from app.schemas.prescription import (
 )
 from app.core.config import settings
 
-# Recognized medicine catalogue for normalization
-CATALOGUE = [
-    {"name": "Panadol", "generic": "Paracetamol", "strength": "500 mg", "form": "Tablet"},
-    {"name": "Paracetamol", "generic": "Paracetamol", "strength": "500 mg", "form": "Tablet"},
-    {"name": "Brufen", "generic": "Ibuprofen", "strength": "400 mg", "form": "Tablet"},
-    {"name": "Augmentin", "generic": "Amoxicillin / Clavulanate", "strength": "625 mg", "form": "Tablet"},
-    {"name": "Calpol", "generic": "Paracetamol", "strength": "120 mg/5 ml", "form": "Syrup"},
-    {"name": "Disprin", "generic": "Aspirin", "strength": "300 mg", "form": "Tablet"},
-    {"name": "Vitamin C", "generic": "Ascorbic Acid", "strength": "500 mg", "form": "Tablet"},
-    {"name": "Flagyl", "generic": "Metronidazole", "strength": "400 mg", "form": "Tablet"},
-    {"name": "Risek", "generic": "Omeprazole", "strength": "20 mg", "form": "Capsule"},
-    {"name": "Arinac", "generic": "Ibuprofen / Pseudoephedrine", "strength": "200 mg/30 mg", "form": "Tablet"},
-    {"name": "Cravit", "generic": "Levofloxacin", "strength": "500 mg", "form": "Tablet"},
-    {"name": "Surbex Z", "generic": "Zinc & Multivitamins", "strength": "Multivitamin", "form": "Tablet"},
-    {"name": "Loprin", "generic": "Aspirin", "strength": "75 mg", "form": "Tablet"},
-    {"name": "Softin", "generic": "Loratadine", "strength": "10 mg", "form": "Tablet"},
-    {"name": "Cetirizine", "generic": "Cetirizine HCl", "strength": "10 mg", "form": "Tablet"},
-    {"name": "Klaricid", "generic": "Clarithromycin", "strength": "250 mg", "form": "Tablet"},
-    {"name": "Hydryllin", "generic": "Aminophylline / Diphenhydramine", "strength": "120 ml", "form": "Syrup"},
-    {"name": "Gravinate", "generic": "Dimenhydrinate", "strength": "50 mg", "form": "Tablet"},
-    {"name": "Amoxicillin", "generic": "Amoxicillin", "strength": "500 mg", "form": "Capsule"},
-    {"name": "Ciprofloxacin", "generic": "Ciprofloxacin", "strength": "500 mg", "form": "Tablet"},
-    {"name": "Azithromycin", "generic": "Azithromycin", "strength": "250 mg", "form": "Tablet"},
-]
+logger = logging.getLogger("dawa.ocr")
+
+def configure_tesseract():
+    """Configures pytesseract with the verified binary path."""
+    tess_path = settings.TESSERACT_CMD
+    if os.path.exists(tess_path):
+        pytesseract.pytesseract.tesseract_cmd = tess_path
+    else:
+        logger.warning(f"Tesseract executable not found at configured path: {tess_path}")
+
+# Initialize on import
+configure_tesseract()
 
 def preprocess_image(input_path: str) -> str:
     """
-    Corrects EXIF orientation, enhances contrast for handwriting readability,
-    and scales large images to a maximum dimension without losing detail.
-    Saves a processed copy and returns its path.
+    Validates the image file and applies Pillow image enhancements for OCR:
+    - Verifies file integrity
+    - Orientation correction via EXIF
+    - Grayscale conversion
+    - Dynamic resizing preserving aspect ratio (upscaling small images for DPI, capping excessively large images)
+    - Contrast enhancement for legible pen/print stroke recognition
+    - Sharpness enhancement for clean character edge separation
     """
     ext = os.path.splitext(input_path)[1].lower()
     if ext == ".pdf":
         return input_path
 
-    processed_path = f"{os.path.splitext(input_path)[0]}_proc.jpg"
     try:
         with Image.open(input_path) as img:
-            # 1. Correct EXIF rotation
-            img = ImageOps.exif_transpose(img) or img
-            if img.mode != "RGB":
-                img = img.convert("RGB")
+            # 1. Correct EXIF orientation
+            transposed = ImageOps.exif_transpose(img)
+            img = transposed if transposed is not None else img
 
-            # 2. Max dimension resize (max 2000px, preserves sharp text)
-            max_dim = 2000
+            # 2. Convert to Grayscale
+            img = img.convert("L")
+
+            # 3. Dynamic resizing for OCR optimization
             w, h = img.size
-            if max(w, h) > max_dim:
-                ratio = max_dim / max(w, h)
-                img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
+            max_dim = max(w, h)
+            if max_dim < 1200:
+                scale = 1600.0 / max_dim
+                img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+            elif max_dim > 2800:
+                scale = 2400.0 / max_dim
+                img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
 
-            # 3. Enhance contrast slightly for prescription ink
+            # 4. Enhance contrast for ink strokes
             enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.2)
+            img = enhancer.enhance(1.8)
 
-            img.save(processed_path, format="JPEG", quality=92)
-            return processed_path
+            # 5. Enhance sharpness for clear font and pen edges
+            sharpener = ImageEnhance.Sharpness(img)
+            img = sharpener.enhance(1.4)
+
+            # Save processed image as PNG to avoid JPEG compression artifacts on text
+            proc_path = f"{os.path.splitext(input_path)[0]}_proc.png"
+            img.save(proc_path, format="PNG")
+            return proc_path
+    except UnidentifiedImageError:
+        raise ValueError("Invalid or unreadable image file. Please upload a valid JPG, PNG, or WEBP image.")
     except Exception as e:
-        print(f"[Image Preprocessing Error]: {e}")
-        return input_path
+        logger.error(f"Image preprocessing error: {e}")
+        raise ValueError(f"Could not process image file: {str(e)}")
 
-def understand_prescription_with_vision(image_path: str) -> Optional[Dict[str, Any]]:
+def extract_text_from_pdf(pdf_path: str) -> str:
+    """Extracts text from a PDF file if uploaded."""
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(pdf_path)
+        extracted = []
+        for page in reader.pages:
+            t = page.extract_text()
+            if t:
+                extracted.append(t)
+        return "\n".join(extracted).strip()
+    except Exception as e:
+        logger.error(f"PDF extraction error: {e}")
+        return ""
+
+def run_tesseract_ocr(image_path: str) -> str:
     """
-    Sends the real preprocessed prescription image to Google Gemini Vision.
-    Requests structured JSON adhering to medical extraction standards.
-    Returns parsed dictionary or None if key missing/error.
+    Executes Tesseract OCR on the preprocessed image file.
+    Extracts actual visible text from the image.
     """
-    api_key = settings.VISION_API_KEY
-    if not api_key:
-        return None
+    configure_tesseract()
+    ext = os.path.splitext(image_path)[1].lower()
+    if ext == ".pdf":
+        return extract_text_from_pdf(image_path)
 
     try:
-        import google.genai as genai
-        client = genai.Client(api_key=api_key)
-
-        prompt = (
-            "You are an expert clinical pharmacist and AI medical vision model for DAWA Healthcare.\n"
-            "Analyze this uploaded prescription image and extract all visible content.\n"
-            "CRITICAL RULES:\n"
-            "1. ONLY extract information that is genuinely legible in the image. Do NOT guess or hallucinate.\n"
-            "2. If handwriting is illegible, mark that field as null or 'unreadable'.\n"
-            "3. Return strict JSON matching this exact structure without markdown ticks:\n"
-            "{\n"
-            '  "patient": {"name": string or null, "age": string or null, "gender": string or null, "date": string or null},\n'
-            '  "doctor": {"name": string or null, "clinic": string or null, "registration_no": string or null},\n'
-            '  "medicines": [\n'
-            '    {\n'
-            '      "original_name": "exact name read from image",\n'
-            '      "normalized_name": "standard clinical name or null",\n'
-            '      "strength": "e.g. 500 mg, 10 mg or null",\n'
-            '      "dosage_form": "Tablet, Capsule, Syrup, etc. or null",\n'
-            '      "quantity": integer (default 10 for tablets, 1 for syrup),\n'
-            '      "instructions": "e.g. 1 tablet twice daily after meals or null",\n'
-            '      "frequency": "e.g. BD, TDS, daily or null",\n'
-            '      "duration": "e.g. 5 days or null",\n'
-            '      "field_status": "verified_from_image or needs_verification",\n'
-            '      "confidence": float between 0.0 and 1.0\n'
-            '    }\n'
-            '  ],\n'
-            '  "clinical_notes": [string],\n'
-            '  "warnings": [string]\n'
-            "}"
-        )
-
-        img = Image.open(image_path)
-        response = client.models.generate_content(
-            model=settings.VISION_MODEL,
-            contents=[img, prompt]
-        )
-
-        if response and response.text:
-            cleaned = response.text.strip()
-            # Remove possible ```json ... ``` wrapper
-            cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.MULTILINE).strip()
-            cleaned = re.sub(r"```$", "", cleaned, flags=re.MULTILINE).strip()
-            return json.loads(cleaned)
+        with Image.open(image_path) as img:
+            # First attempt: PSM 6 (uniform block of text, ideal for structured prescriptions)
+            text = pytesseract.image_to_string(img, config="--oem 3 --psm 6").strip()
+            # If empty or minimal characters detected, fall back to automatic page segmentation (PSM 3)
+            clean_check = re.sub(r"[^A-Za-z0-9]", "", text)
+            if len(clean_check) < 4:
+                text_alt = pytesseract.image_to_string(img, config="--oem 3 --psm 3").strip()
+                if len(re.sub(r"[^A-Za-z0-9]", "", text_alt)) > len(clean_check):
+                    text = text_alt
+            return text
     except Exception as e:
-        print(f"[Gemini Vision Execution Error]: {e}")
-    return None
+        logger.error(f"Tesseract OCR execution error: {e}")
+        return ""
 
-def extract_with_ocr_space(image_path: str) -> Tuple[str, Optional[str]]:
-    """Calls OCR.space if an API key is configured."""
-    key = settings.OCR_SPACE_API_KEY
-    if not key:
-        return "", None
-
-    try:
-        with open(image_path, "rb") as f:
-            res = requests.post(
-                "https://api.ocr.space/parse/image",
-                files={"filename": (os.path.basename(image_path), f, "image/jpeg")},
-                data={
-                    "apikey": key,
-                    "language": "eng",
-                    "scale": True,
-                    "detectOrientation": True,
-                },
-                timeout=18,
-            )
-        if res.status_code == 200:
-            data = res.json()
-            results = data.get("ParsedResults", [])
-            if results:
-                text = results[0].get("ParsedText", "").strip()
-                return text, None
-            if "error" in data:
-                return "", str(data["error"])
-    except Exception as e:
-        return "", str(e)
-    return "", None
-
-def parse_text_heuristically(raw_text: str) -> Dict[str, Any]:
+def structure_prescription_with_ollama(ocr_text: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
-    Parses plain text from OCR into structured fields without hardcoded medicine fallbacks.
+    Sends actual extracted OCR text to local Ollama API (llama3.2:3b).
+    Structures text into strict JSON adhering to medical guidelines:
+    - Never invents medicine names, strengths, dosages or quantities
+    - Returns null for missing or unclear fields
+    - Returns empty list if no medicines are present
     """
-    lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
-    patient = {"name": None, "age": None, "gender": None, "date": None}
-    doctor = {"name": None, "clinic": None, "registration_no": None}
-    medicines = []
-    warnings = []
+    endpoint = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/chat"
+    
+    prompt = f"""You are a clinical pharmacist AI assistant extracting structured data from doctor prescription OCR text for the DAWA Healthcare platform.
+Analyze the following raw OCR text and extract all patient details, doctor details, and prescribed medicines into strict JSON.
 
-    # Metadata extraction
-    for line in lines:
-        lower = line.lower()
-        if not patient["name"] and ("patient:" in lower or "patient name:" in lower or "pt name:" in lower or "pt:" in lower):
-            m = re.search(r'(?:patient(?:\s*name)?|pt(?:\s*name)?)\s*[:\-]?\s*([A-Za-z\s\.\'\-]+)', line, re.IGNORECASE)
-            if m: patient["name"] = m.group(1).strip()
-        if not patient["date"] and ("date:" in lower or "/" in line or "-" in line):
-            m = re.search(r'(\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b|\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b)', line)
-            if m: patient["date"] = m.group(1).strip()
-        if not doctor["name"] and ("dr." in lower or "doctor:" in lower):
-            m = re.search(r'(?:dr\.|doctor\s*[:\-])\s*([A-Za-z\s\.\'\-]+)', line, re.IGNORECASE)
-            if m: doctor["name"] = "Dr. " + m.group(1).replace("Dr.", "").strip()
+CRITICAL EXTRACTION RULES:
+1. ONLY extract medicines that are explicitly visible and legible in the OCR text.
+2. NEVER invent, hallucinate, extrapolate, or guess medicines, strengths, dosage forms, or quantities.
+3. If any field (strength, dosage_form, quantity, instructions, frequency, duration) is missing, not mentioned, or unclear in the text, you MUST set it to null (use 1 for quantity if unspecified).
+4. If a medicine line has an uncertain or partially legible field, list that field name in "uncertain_fields".
+5. If NO medicines are legible in the text, return an empty list [] for "medicines".
+6. Return JSON only, matching the exact schema below, without explanation or markdown text.
 
-    # Search catalogue
-    strength_pattern = re.compile(r'(\d+(?:\.\d+)?\s*(?:mg|ma|g|ml|mcg|iu)(?:/\d+\s*ml)?)', re.IGNORECASE)
-    form_pattern = re.compile(r'\b(tab(?:let)?|cap(?:sule)?|syp|syrup|drop|inj(?:ection)?)\b', re.IGNORECASE)
-    freq_pattern = re.compile(r'\b(OD|BD|TDS|QDS|QID|BID|TID|once daily|twice daily|thrice daily|1\+0\+1|1\+1\+1|1\+0\+0|PRN)\b', re.IGNORECASE)
-    qty_pattern = re.compile(r'(?:qty|x|#|quantity)\s*[:=]?\s*(\d+)', re.IGNORECASE)
+REQUIRED JSON SCHEMA:
+{{
+  "patient": {{
+    "name": string or null,
+    "age": string or null,
+    "gender": string or null,
+    "date": string or null
+  }},
+  "doctor": {{
+    "name": string or null,
+    "clinic": string or null,
+    "registration_no": string or null
+  }},
+  "medicines": [
+    {{
+      "original_name": "Exact medicine name from text",
+      "strength": "e.g. 500 mg, 625 mg, 10 mg or null",
+      "dosage_form": "e.g. Tablet, Capsule, Syrup, Drop or null",
+      "quantity": integer or null,
+      "instructions": "e.g. Take after meals, with water or null",
+      "frequency": "e.g. Once daily, Twice daily, 1+0+1, PRN or null",
+      "duration": "e.g. 5 days, 1 week or null",
+      "uncertain_fields": ["list", "of", "uncertain", "fields"]
+    }}
+  ],
+  "unreadable_notes": ["any unreadable lines or annotations"]
+}}
 
-    raw_words = re.findall(r'[A-Za-z]{4,}', raw_text)
-    catalog_lookup = {c["name"].lower(): c for c in CATALOGUE}
-    catalog_names = list(catalog_lookup.keys())
-    seen = set()
+RAW OCR TEXT:
+\"\"\"{ocr_text}\"\"\"
+"""
 
-    for word in raw_words:
-        matches = difflib.get_close_matches(word.lower(), catalog_names, n=1, cutoff=0.74)
-        if matches:
-            k = matches[0]
-            item = catalog_lookup[k]
-            med_name = item["name"]
-            if med_name in seen:
-                continue
-            seen.add(med_name)
-
-            # Line context
-            ctx = ""
-            for l in lines:
-                if word in l or med_name.lower() in l.lower():
-                    ctx = l
-                    break
-
-            sm = strength_pattern.search(ctx)
-            st = sm.group(1).replace("ma", "mg") if sm else item["strength"]
-            fm = form_pattern.search(ctx)
-            form = "Syrup" if (fm and "syp" in fm.group(1).lower()) else item["form"]
-            freq = freq_pattern.search(ctx)
-            frequency = freq.group(1).upper() if freq else "Twice daily"
-            qm = qty_pattern.search(ctx)
-            qty = int(qm.group(1)) if qm else (1 if "syrup" in form.lower() else 10)
-
-            medicines.append({
-                "original_name": med_name,
-                "normalized_name": med_name,
-                "strength": st,
-                "dosage_form": form,
-                "quantity": qty,
-                "instructions": "As directed by physician",
-                "frequency": frequency,
-                "duration": "5 days",
-                "field_status": "verified_from_image",
-                "confidence": 0.90 if word.lower() == med_name.lower() else 0.78,
-            })
-
-    if not medicines:
-        warnings.append("No medicines could be confidently identified from the text in this image.")
-
-    return {
-        "patient": patient,
-        "doctor": doctor,
-        "medicines": medicines,
-        "clinical_notes": [],
-        "warnings": warnings,
+    payload = {
+        "model": settings.OLLAMA_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a clinical pharmacy OCR data extractor. You return strict JSON conforming to the requested schema. Never invent medicines or default values."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "format": "json",
+        "stream": False,
+        "options": {
+            "temperature": 0.0
+        }
     }
+
+    try:
+        response = requests.post(
+            endpoint,
+            json=payload,
+            timeout=settings.OLLAMA_TIMEOUT
+        )
+        if response.status_code != 200:
+            return None, f"Ollama returned HTTP {response.status_code}: {response.text[:200]}"
+        
+        data = response.json()
+        message_content = data.get("message", {}).get("content", "").strip()
+        if not message_content:
+            return None, "Ollama returned an empty response."
+
+        # Parse JSON from model
+        parsed = json.loads(message_content)
+        return parsed, None
+    except requests.exceptions.Timeout:
+        return None, f"Ollama model timed out after {settings.OLLAMA_TIMEOUT}s."
+    except requests.exceptions.ConnectionError:
+        return None, f"Ollama local AI service is unavailable at {settings.OLLAMA_BASE_URL}."
+    except Exception as e:
+        return None, f"Ollama processing error: {str(e)}"
 
 def process_prescription_pipeline(original_image_path: str) -> PrescriptionExtractionResponse:
     """
-    Main image understanding pipeline:
-    1. Preprocesses image (orientation, contrast enhancement, max-dimension scale).
-    2. Runs Vision AI if VISION_API_KEY is configured.
-    3. If Vision API not configured, tries configured OCR engine.
-    4. If no vision/OCR engine is configured, returns an honest configuration warning with empty medicine list.
-    5. NEVER inserts sample/fallback medicines.
+    Main prescription scanning pipeline:
+    1. Preprocesses image using Pillow (orientation, grayscale, contrast, resizing).
+    2. Runs Tesseract OCR to extract actual visible text.
+    3. If no readable text found, returns appropriate error notice and empty medicine list.
+    4. Sends extracted text to local Ollama (llama3.2:3b) to structure into clinical JSON.
+    5. If Ollama is unavailable, returns honest error warning and empty medicine list.
+    6. Never returns mock or default sample medicines.
     """
+    # 1. Preprocess with Pillow
     proc_image_path = preprocess_image(original_image_path)
 
-    # 1. Try Gemini Vision AI
-    if settings.VISION_API_KEY:
-        vision_result = understand_prescription_with_vision(proc_image_path)
-        if vision_result:
-            meds = [ExtractedMedicine(**m) for m in vision_result.get("medicines", [])]
-            return PrescriptionExtractionResponse(
-                success=True,
-                prescription_id=0,
-                image_url="",
-                patient=PatientInfo(**vision_result.get("patient", {})),
-                doctor=DoctorInfo(**vision_result.get("doctor", {})),
-                medicines=meds,
-                clinical_notes=vision_result.get("clinical_notes", []),
-                warnings=vision_result.get("warnings", []),
-                requires_patient_review=True,
-                provider_used=f"Gemini Vision ({settings.VISION_MODEL})",
-            )
+    # 2. Extract actual visible text via Tesseract OCR
+    raw_text = run_tesseract_ocr(proc_image_path)
+    logger.info(f"Tesseract raw text length: {len(raw_text)} chars")
 
-    # 2. Try OCR.space if key configured
-    if settings.OCR_SPACE_API_KEY:
-        raw_text, ocr_err = extract_with_ocr_space(proc_image_path)
-        if raw_text:
-            parsed = parse_text_heuristically(raw_text)
-            meds = [ExtractedMedicine(**m) for m in parsed.get("medicines", [])]
-            return PrescriptionExtractionResponse(
-                success=len(meds) > 0,
-                prescription_id=0,
-                image_url="",
-                patient=PatientInfo(**parsed.get("patient", {})),
-                doctor=DoctorInfo(**parsed.get("doctor", {})),
-                medicines=meds,
-                clinical_notes=parsed.get("clinical_notes", []),
-                warnings=parsed.get("warnings", []),
-                requires_patient_review=True,
-                provider_used="OCR.space Engine",
-            )
-        elif ocr_err:
-            return PrescriptionExtractionResponse(
-                success=False,
-                prescription_id=0,
-                image_url="",
-                warnings=[f"OCR service notice: {ocr_err}. Please review or add medicines manually."],
-                requires_patient_review=True,
-                provider_used="OCR.space (Error)",
-            )
+    # 3. Check for readable content
+    alphanumeric_chars = re.sub(r"[^A-Za-z0-9]", "", raw_text)
+    if not raw_text or len(alphanumeric_chars) < 3:
+        return PrescriptionExtractionResponse(
+            success=False,
+            prescription_id=0,
+            image_url="",
+            patient=PatientInfo(),
+            doctor=DoctorInfo(),
+            medicines=[],
+            clinical_notes=[],
+            warnings=[
+                "No readable text could be detected from this prescription image. "
+                "Please ensure the image is clear, well-lit, and in focus, or add your medicines manually below."
+            ],
+            requires_patient_review=True,
+            provider_used="Tesseract OCR",
+            raw_text=raw_text,
+        )
 
-    # 3. Honest Notice when Vision AI key is not yet provided in .env
+    # 4. Structure extracted text with Ollama
+    ollama_data, ollama_err = structure_prescription_with_ollama(raw_text)
+
+    if ollama_err or not ollama_data:
+        warning_msg = (
+            f"Local AI structuring note: {ollama_err}. "
+            "No medicines could be automatically structured. Please review or add your medicines manually below."
+        ) if ollama_err else "Could not structure prescription text. Please enter your medicines manually below."
+
+        return PrescriptionExtractionResponse(
+            success=False,
+            prescription_id=0,
+            image_url="",
+            patient=PatientInfo(),
+            doctor=DoctorInfo(),
+            medicines=[],
+            clinical_notes=[],
+            warnings=[warning_msg],
+            requires_patient_review=True,
+            provider_used="Tesseract OCR (Ollama Unavailable)",
+            raw_text=raw_text,
+        )
+
+    # 5. Convert Ollama data into validated schema objects
+    raw_patient = ollama_data.get("patient") or {}
+    patient = PatientInfo(
+        name=raw_patient.get("name"),
+        age=str(raw_patient.get("age")) if raw_patient.get("age") is not None else None,
+        gender=raw_patient.get("gender"),
+        date=raw_patient.get("date"),
+    )
+
+    raw_doctor = ollama_data.get("doctor") or {}
+    doctor = DoctorInfo(
+        name=raw_doctor.get("name"),
+        clinic=raw_doctor.get("clinic"),
+        registration_no=raw_doctor.get("registration_no"),
+    )
+
+    medicines: List[ExtractedMedicine] = []
+    for item in ollama_data.get("medicines", []):
+        if not isinstance(item, dict):
+            continue
+        med_name = (item.get("original_name") or item.get("medicine_name") or "").strip()
+        # Discard invalid or null names
+        if not med_name or med_name.lower() in ["null", "none", "unknown", "n/a"]:
+            continue
+
+        uncertain = item.get("uncertain_fields") or []
+        if isinstance(uncertain, str):
+            uncertain = [uncertain]
+
+        qty_val = item.get("quantity")
+        parsed_qty = 1
+        if isinstance(qty_val, int) and qty_val > 0:
+            parsed_qty = qty_val
+        elif isinstance(qty_val, str) and qty_val.isdigit():
+            parsed_qty = int(qty_val)
+
+        has_uncertainty = len(uncertain) > 0
+
+        medicines.append(
+            ExtractedMedicine(
+                original_name=med_name,
+                normalized_name=med_name,
+                strength=item.get("strength"),
+                dosage_form=item.get("dosage_form"),
+                quantity=parsed_qty,
+                instructions=item.get("instructions"),
+                frequency=item.get("frequency"),
+                duration=item.get("duration"),
+                uncertain_fields=uncertain,
+                field_status="needs_verification" if has_uncertainty else "verified_from_image",
+                confidence=0.85 if has_uncertainty else 0.95,
+            )
+        )
+
+    warnings: List[str] = []
+    if not medicines:
+        warnings.append(
+            "No medicines could be clearly identified from the text in this image. "
+            "You can add your medicines manually below to find pharmacies."
+        )
+
     return PrescriptionExtractionResponse(
-        success=False,
+        success=len(medicines) > 0,
         prescription_id=0,
         image_url="",
-        warnings=[
-            "Vision AI API key is not configured in backend/.env (VISION_API_KEY). "
-            "Please add your Gemini API key or add your medicines manually below to find pharmacies."
-        ],
+        patient=patient,
+        doctor=doctor,
+        medicines=medicines,
+        clinical_notes=[],
+        warnings=warnings,
         requires_patient_review=True,
-        provider_used="None (Configuration Required)",
+        provider_used="Tesseract OCR + Llama 3.2",
+        raw_text=raw_text,
     )
