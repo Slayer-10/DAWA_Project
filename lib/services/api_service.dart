@@ -500,12 +500,14 @@ class ApiService {
 
   // 3. Prescription OCR Upload
   Future<Map<String, dynamic>> uploadPrescription(
-      Uint8List imageBytes, String filename,
-      {int patientId = 1}) async {
+      Uint8List imageBytes, String filename) async {
     try {
       final uri = _uri('/ocr/upload-prescription');
       final request = http.MultipartRequest('POST', uri)
-        ..fields['patient_id'] = patientId.toString()
+        ..headers.addAll({
+          if (authToken != null && authToken!.isNotEmpty)
+            'Authorization': 'Bearer $authToken',
+        })
         ..files.add(http.MultipartFile.fromBytes(
           'file',
           imageBytes,
@@ -513,7 +515,7 @@ class ApiService {
         ));
 
       final streamedRes =
-          await request.send().timeout(const Duration(seconds: 120));
+          await request.send().timeout(const Duration(seconds: 90));
       final res = await http.Response.fromStream(streamedRes);
 
       if (res.statusCode == 200) {

@@ -139,6 +139,7 @@ class _PharmacistAdminScreenState extends State<PharmacistAdminScreen> {
     }
   }
 
+  // ignore: unused_element
   void _showPrescriptionImage(int prescriptionId) {
     final imgUrl = '${ApiService.instance.baseUrl}/prescriptions/$prescriptionId/image';
     showDialog<void>(

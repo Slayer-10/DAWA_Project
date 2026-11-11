@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
+import '../services/auth_state.dart';
 import '../navigation/nav.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common.dart';
@@ -31,9 +32,15 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
       if (x == null) return;
       final b = await x.readAsBytes();
       if (!mounted) return;
+      // Ensure extension is valid; default to .jpg
+      String name = x.name;
+      final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
+      if (!['jpg', 'jpeg', 'png', 'webp'].contains(ext)) {
+        name = 'prescription_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      }
       setState(() {
         _bytes = b;
-        _filename = x.name;
+        _filename = name;
         _error = null;
       });
     } catch (_) {
@@ -82,8 +89,33 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
     );
   }
 
+  void _enterManually() {
+    push(
+      context,
+      ExtractedMedicineReviewScreen(
+        prescriptionId: 0,
+        imageBytes: _bytes ?? Uint8List(0),
+        patientName: null,
+        patientAge: null,
+        doctorName: null,
+        prescriptionDate: null,
+        initialMedicines: const [],
+        warnings: const ['Medicines entered manually.'],
+      ),
+    );
+  }
+
   Future<void> _processPrescription() async {
     if (_bytes == null) return;
+
+    // Ensure token is current
+    final token = AuthState.instance.token;
+    if (token == null || token.isEmpty) {
+      await AuthState.instance.logout();
+      if (!mounted) return;
+      setState(() => _error = 'Session expired. Please sign in again.');
+      return;
+    }
 
     setState(() {
       _uploading = true;
@@ -97,7 +129,7 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
       if (!mounted) return;
       setState(() => _uploading = false);
 
-      final prescriptionId = res['prescription_id'] as int;
+      final prescriptionId = res['prescription_id'] as int? ?? 0;
       final patient = res['patient'] as Map<String, dynamic>? ?? {};
       final doctor = res['doctor'] as Map<String, dynamic>? ?? {};
       final List rawMeds = res['medicines'] ?? [];
@@ -118,9 +150,20 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      // Handle session expiry
+      if (msg.contains('401') || msg.toLowerCase().contains('credentials') || msg.toLowerCase().contains('unauthorized')) {
+        await AuthState.instance.logout();
+        if (!mounted) return;
+        setState(() {
+          _uploading = false;
+          _error = 'Session expired. Please sign in again.';
+        });
+        return;
+      }
       setState(() {
         _uploading = false;
-        _error = 'Failed to process prescription: $e';
+        _error = msg;
       });
     }
   }
@@ -132,8 +175,23 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (_bytes == null) _empty() else _preview(),
-          if (_error != null) ...[
+          if (_uploading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Reading your prescription...',
+                      style: TextStyle(fontSize: 15, color: Color(0xFF77758A))),
+                ],
+              ),
+            )
+          else if (_bytes == null)
+            _empty()
+          else
+            _preview(),
+          if (_error != null && !_uploading) ...[
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(14),
@@ -142,15 +200,42 @@ class _PrescriptionScreenState extends State<PrescriptionScreen> {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: const Color(0xFFFCA5A5)),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.error_outline_rounded,
-                      color: Color(0xFFDC2626), size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(_error!,
-                        style: t(13.5, c: const Color(0xFF991B1B))),
+                  Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          color: Color(0xFFDC2626), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(_error!,
+                            style: t(13.5, c: const Color(0xFF991B1B))),
+                      ),
+                    ],
                   ),
+                  if (_bytes != null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _processPrescription,
+                            icon: const Icon(Icons.refresh_rounded, size: 16),
+                            label: const Text('Retry'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _enterManually,
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: const Text('Enter manually'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

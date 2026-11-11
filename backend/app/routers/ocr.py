@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from app.database import get_db
@@ -8,14 +8,16 @@ from app.models.prescription import Prescription, PrescriptionItem
 from app.schemas.prescription import PrescriptionExtractionResponse
 from app.services.ocr_service import process_prescription_pipeline
 from app.core.config import settings
+from app.auth import get_current_user, require_role
+from app.models.user import User
 
 router = APIRouter(prefix="/ocr", tags=["Prescription OCR"])
 
 @router.post("/upload-prescription", response_model=PrescriptionExtractionResponse)
 async def upload_prescription(
     file: UploadFile = File(...),
-    patient_id: int = Form(1),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("patient"))
 ):
     """
     Accepts an actual uploaded prescription image or PDF.
@@ -48,12 +50,21 @@ async def upload_prescription(
     try:
         response_data = await run_in_threadpool(process_prescription_pipeline, filepath)
     except ValueError as e:
+        # Unreadable image
         if os.path.exists(filepath):
             try:
                 os.remove(filepath)
             except OSError:
                 pass
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        # No engine available (Tesseract missing)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         if os.path.exists(filepath):
             try:
@@ -64,7 +75,7 @@ async def upload_prescription(
 
     # Save prescription record in database
     db_prescription = Prescription(
-        patient_id=patient_id,
+        patient_id=None,  # patient_id FK is to legacy patients table; auth done via require_role
         image_path=filename,
         ocr_raw_text=response_data.raw_text or "",
         ocr_confidence=1.0 if response_data.success else 0.0,
